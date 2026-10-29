@@ -1,13 +1,17 @@
 "use client";
 
 import * as React from "react";
-import { Printer } from "lucide-react";
+import { Printer, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export function PrintConfirmationButton() {
+  const [printed, setPrinted] = React.useState(false);
+
   const handlePrint = () => {
     if (typeof window !== "undefined") {
+      setPrinted(true);
       window.print();
+      setTimeout(() => setPrinted(false), 2000);
     }
   };
 
@@ -15,11 +19,15 @@ export function PrintConfirmationButton() {
     <Button
       variant="outline"
       onClick={handlePrint}
-      className="gap-2 border-[#E8E0D0] text-[#18241E] hover:bg-neutral-100 cursor-pointer"
+      className="inline-flex items-center gap-2 border-slate-200 bg-white text-slate-800 hover:bg-slate-50 hover:text-slate-900 shadow-xs text-xs font-semibold px-4 py-2 rounded-xl transition-all cursor-pointer"
       title="Print or Save PDF Receipt"
     >
-      <Printer className="w-4 h-4 text-[#103D32]" />
-      <span className="hidden sm:inline">Print Receipt</span>
+      {printed ? (
+        <Check className="w-4 h-4 text-emerald-600" />
+      ) : (
+        <Printer className="w-4 h-4 text-emerald-800" />
+      )}
+      <span>{printed ? "Printed" : "Print Voucher"}</span>
     </Button>
   );
 }

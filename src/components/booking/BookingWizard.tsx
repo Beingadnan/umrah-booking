@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { formatPriceINR } from "@/lib/utils";
 import { calculateBookingTotal } from "@/services/bookings";
@@ -24,7 +25,18 @@ import {
   Building,
   Smartphone,
   Check,
-  RefreshCw,
+  Plane,
+  Sparkles,
+  Bed,
+  MapPin,
+  Clock,
+  Phone,
+  Mail,
+  User,
+  ChevronDown,
+  ChevronUp,
+  Info,
+  QrCode,
 } from "lucide-react";
 
 interface BookingWizardProps {
@@ -46,10 +58,11 @@ export function BookingWizard({
 }: BookingWizardProps) {
   const router = useRouter();
 
-  // 5 Step Guided Flow: 1: Package, 2: Travelers, 3: Options, 4: Review, 5: Payment
+  // 5 Step Guided Flow
   const [step, setStep] = React.useState<number>(1);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
+  const [mobileSummaryOpen, setMobileSummaryOpen] = React.useState(false);
 
   // Form Fields - Step 1: Package & Dates
   const [departureCity, setDepartureCity] = React.useState(
@@ -66,6 +79,7 @@ export function BookingWizard({
   const [contactEmail, setContactEmail] = React.useState(userEmail);
   const [contactPhone, setContactPhone] = React.useState("+91 ");
   const [specialRequests, setSpecialRequests] = React.useState("");
+  const [selectedTags, setSelectedTags] = React.useState<string[]>([]);
 
   const [travellers, setTravellers] = React.useState<
     Array<{
@@ -96,6 +110,7 @@ export function BookingWizard({
   // Form Fields - Step 5: Payment Simulation & Verification
   const [paymentMethod, setPaymentMethod] = React.useState<"UPI" | "CARD" | "NETBANKING">("UPI");
   const [upiId, setUpiId] = React.useState("pilgrim@okaxis");
+  const [selectedBank, setSelectedBank] = React.useState("State Bank of India");
   const [createdBookingId, setCreatedBookingId] = React.useState<string | null>(null);
 
   // Dynamic pricing calculation
@@ -113,13 +128,35 @@ export function BookingWizard({
 
   const grandTotal = baseTotal + upgradesTotal;
 
+  // Selected departure object
+  const selectedDeparture =
+    packageData.departures?.find((d) => d.id === departureId) ||
+    packageData.departures?.[0];
+
+  const formattedDepartureDate = selectedDeparture
+    ? new Date(selectedDeparture.departureDate).toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })
+    : "Flexible";
+
+  const formattedReturnDate = selectedDeparture
+    ? new Date(selectedDeparture.returnDate).toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })
+    : "Flexible";
+
   // Handle Pax Count changes
   const handlePaxChange = (newCount: number) => {
-    setPaxCount(newCount);
+    const validCount = Math.max(1, Math.min(20, newCount));
+    setPaxCount(validCount);
     setTravellers((prev) => {
       const arr = [...prev];
-      if (newCount > arr.length) {
-        for (let i = arr.length; i < newCount; i++) {
+      if (validCount > arr.length) {
+        for (let i = arr.length; i < validCount; i++) {
           arr.push({
             fullName: "",
             gender: "MALE",
@@ -129,7 +166,7 @@ export function BookingWizard({
           });
         }
       } else {
-        arr.length = newCount;
+        arr.length = validCount;
       }
       return arr;
     });
@@ -147,23 +184,36 @@ export function BookingWizard({
     });
   };
 
+  const copyLeadToTraveler1 = () => {
+    if (contactName.trim()) {
+      updateTraveller(0, "fullName", contactName.trim());
+    }
+  };
+
+  const toggleRequestTag = (tag: string) => {
+    setSelectedTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+    );
+  };
+
   // Step 2 Validation
   const validateStep2 = () => {
     if (!contactName.trim() || contactName.trim().length < 2) {
-      setErrorMessage("Please enter lead traveler full legal name.");
+      setErrorMessage("Please enter lead traveler's full legal name as per passport.");
       return false;
     }
     if (!contactEmail.includes("@") || !contactEmail.includes(".")) {
-      setErrorMessage("Please enter a valid email address for booking confirmation.");
+      setErrorMessage("Please enter a valid email address for your booking confirmation & e-tickets.");
       return false;
     }
-    if (contactPhone.replace(/\D/g, "").length < 10) {
+    const cleanPhone = contactPhone.replace(/\D/g, "");
+    if (cleanPhone.length < 10) {
       setErrorMessage("Please enter a valid 10-digit mobile number for concierge updates.");
       return false;
     }
     for (let i = 0; i < travellers.length; i++) {
       if (!travellers[i].fullName.trim()) {
-        setErrorMessage(`Please enter the legal name for Traveler ${i + 1}.`);
+        setErrorMessage(`Please enter the legal name for Pilgrim ${i + 1}.`);
         return false;
       }
     }
@@ -174,12 +224,22 @@ export function BookingWizard({
   // Step 4: Create Initial Booking
   const handleCreateBookingOrder = async () => {
     if (!agreedToTerms) {
-      setErrorMessage("Please accept the terms and cancellation policy.");
+      setErrorMessage("Please accept the terms of service and cancellation policy to proceed.");
       return;
     }
 
     setIsSubmitting(true);
     setErrorMessage(null);
+
+    const compiledRequests = [
+      ...selectedTags,
+      specialRequests.trim(),
+      upgradeBulletTrain ? "Upgrade: Haramain High-Speed Bullet Train (Business Class)" : "",
+      upgradePrivateVehicle ? "Upgrade: Private VIP GMC Chauffeur Airport Transfer" : "",
+      upgradeZamzamDoorstep ? "Upgrade: 5L Sealed Zamzam Home Delivery" : "",
+    ]
+      .filter(Boolean)
+      .join(" | ");
 
     try {
       const res = await fetch("/api/bookings", {
@@ -194,14 +254,7 @@ export function BookingWizard({
           contactName,
           contactEmail,
           contactPhone,
-          specialRequests: [
-            specialRequests,
-            upgradeBulletTrain ? "Upgrade: Haramain Bullet Train VIP Business Class" : "",
-            upgradePrivateVehicle ? "Upgrade: Private VIP GMC Airport Transfer" : "",
-            upgradeZamzamDoorstep ? "Upgrade: 5L Zamzam Doorstep Dispatch" : "",
-          ]
-            .filter(Boolean)
-            .join(" | "),
+          specialRequests: compiledRequests,
           travellers,
         }),
       });
@@ -214,6 +267,7 @@ export function BookingWizard({
       setCreatedBookingId(data.booking.id);
       setIsSubmitting(false);
       setStep(5); // Proceed to Payment Step
+      window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err: unknown) {
       setIsSubmitting(false);
       setErrorMessage((err as Error).message);
@@ -231,7 +285,6 @@ export function BookingWizard({
     setErrorMessage(null);
 
     try {
-      // Generate transaction reference
       const paymentTxId = `pay_sim_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
       const res = await fetch("/api/bookings/payment-verify", {
@@ -259,18 +312,19 @@ export function BookingWizard({
   };
 
   const stepsList = [
-    { num: 1, label: "Package" },
-    { num: 2, label: "Travelers" },
-    { num: 3, label: "Options" },
-    { num: 4, label: "Review" },
-    { num: 5, label: "Payment" },
+    { num: 1, label: "Dates & Rooms", short: "Dates" },
+    { num: 2, label: "Travelers", short: "Pilgrims" },
+    { num: 3, label: "Upgrades", short: "Extras" },
+    { num: 4, label: "Review", short: "Review" },
+    { num: 5, label: "Payment", short: "Payment" },
   ];
 
   return (
-    <div className="space-y-8">
-      {/* 5-Step Guided Progress Indicator matching requirements */}
-      <div className="bg-white rounded-2xl border border-[#E8E0D0] p-4 shadow-2xs">
-        <div className="flex items-center justify-between max-w-2xl mx-auto">
+    <div className="space-y-6 lg:space-y-8">
+      {/* ================= STEPPER HEADER ================= */}
+      <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/80 p-4 sm:p-5 shadow-xs">
+        {/* Desktop Stepper */}
+        <div className="hidden sm:flex items-center justify-between max-w-3xl mx-auto">
           {stepsList.map((s, idx) => {
             const isCompleted = step > s.num;
             const isCurrent = step === s.num;
@@ -279,19 +333,23 @@ export function BookingWizard({
               <React.Fragment key={s.num}>
                 <div className="flex flex-col items-center gap-1.5">
                   <div
-                    className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs transition-all ${
+                    className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs transition-all duration-200 ${
                       isCompleted
-                        ? "bg-[#103D32] text-white shadow-2xs"
+                        ? "bg-[#103D32] text-white shadow-xs"
                         : isCurrent
-                        ? "bg-[#C5A264] text-[#103D32] ring-4 ring-[#C5A264]/20 shadow-xs"
-                        : "bg-[#F8F3E8] border border-[#E8E0D0] text-[#66726A]"
+                        ? "bg-[#103D32] text-white ring-4 ring-[#103D32]/15 shadow-xs"
+                        : "bg-slate-100 border border-slate-200 text-slate-400"
                     }`}
                   >
                     {isCompleted ? <Check className="w-4 h-4 stroke-[3]" /> : s.num}
                   </div>
                   <span
-                    className={`text-[11px] font-semibold hidden sm:block ${
-                      isCurrent ? "text-[#103D32]" : "text-[#707873]"
+                    className={`text-xs font-semibold tracking-tight transition-colors ${
+                      isCurrent
+                        ? "text-[#103D32]"
+                        : isCompleted
+                        ? "text-slate-700"
+                        : "text-slate-400"
                     }`}
                   >
                     {s.label}
@@ -300,8 +358,8 @@ export function BookingWizard({
 
                 {idx < stepsList.length - 1 && (
                   <div
-                    className={`flex-1 h-[2px] mx-2 transition-all ${
-                      step > s.num ? "bg-[#103D32]" : "bg-[#E8E0D0]"
+                    className={`flex-1 h-[2px] mx-3 transition-colors duration-300 ${
+                      step > s.num ? "bg-[#103D32]" : "bg-slate-200"
                     }`}
                   />
                 )}
@@ -309,716 +367,1215 @@ export function BookingWizard({
             );
           })}
         </div>
-      </div>
 
-      {errorMessage && (
-        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2.5 animate-in fade-in">
-          <AlertCircle className="w-4 h-4 text-amber-700 shrink-0" />
-          <span>{errorMessage}</span>
-        </div>
-      )}
-
-      {/* ================= STEP 1: PACKAGE & DATES ================= */}
-      {step === 1 && (
-        <div className="bg-white rounded-3xl border border-[#E8E0D0] p-6 sm:p-8 space-y-6 shadow-2xs">
-          <div>
-            <h3 className="font-display text-2xl font-bold text-[#103D32]">
-              Select Dates & Occupancy
-            </h3>
-            <p className="text-xs text-[#66726A] mt-1">
-              Configure your pilgrimage group size and room sharing preference.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Departure City */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[#18241E] block">
-                Departure City
-              </label>
-              <select
-                value={departureCity}
-                onChange={(e) => setDepartureCity(e.target.value)}
-                className="w-full bg-[#F8F3E8] border border-[#E8E0D0] rounded-xl px-4 py-2.5 text-xs text-[#18241E] font-medium focus:ring-1 focus:ring-[#103D32]"
-              >
-                {packageData.departureCities.map((c) => (
-                  <option key={c} value={c}>
-                    {c} (Direct Pilgrimage Flight)
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Departure Date */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[#18241E] block">
-                Departure Date
-              </label>
-              <select
-                value={departureId}
-                onChange={(e) => setDepartureId(e.target.value)}
-                className="w-full bg-[#F8F3E8] border border-[#E8E0D0] rounded-xl px-4 py-2.5 text-xs text-[#18241E] font-medium focus:ring-1 focus:ring-[#103D32]"
-              >
-                {packageData.departures.map((dep) => {
-                  const dStart = new Date(dep.departureDate).toLocaleDateString("en-GB", {
-                    day: "numeric",
-                    month: "short",
-                    year: "numeric",
-                  });
-                  const dEnd = new Date(dep.returnDate).toLocaleDateString("en-GB", {
-                    day: "numeric",
-                    month: "short",
-                    year: "numeric",
-                  });
-                  return (
-                    <option key={dep.id} value={dep.id}>
-                      {dStart} – {dEnd} ({dep.availableSeats} verified seats left)
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
-          </div>
-
-          {/* Number of Travelers */}
-          <div className="space-y-2 pt-2">
-            <label className="text-xs font-semibold text-[#18241E] block">
-              Number of Pilgrims ({paxCount})
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {[1, 2, 3, 4, 5, 6, 8].map((num) => (
-                <button
-                  key={num}
-                  type="button"
-                  onClick={() => handlePaxChange(num)}
-                  className={`w-12 h-10 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                    paxCount === num
-                      ? "bg-[#103D32] text-white border-[#103D32] shadow-2xs"
-                      : "border-[#E8E0D0] text-[#66726A] hover:border-[#C5A264]"
-                  }`}
-                >
-                  {num}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Room Type */}
-          <div className="space-y-2 pt-2">
-            <label className="text-xs font-semibold text-[#18241E] block">
-              Room Occupancy Type
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              {[
-                { id: "SHARING_4", label: "Quad (4 Bed)", desc: "Standard Base Rate", sub: "Most popular for families" },
-                { id: "TRIPLE_3", label: "Triple (3 Bed)", desc: "+10% supplement", sub: "Extra comfort" },
-                { id: "DOUBLE_2", label: "Double (Couple)", desc: "+25% supplement", sub: "Private room for 2" },
-                { id: "SINGLE_1", label: "Single Suite", desc: "+65% supplement", sub: "100% private solo room" },
-              ].map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setRoomType(item.id)}
-                  className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
-                    roomType === item.id
-                      ? "bg-[#FAF6ED] border-[#103D32] text-[#103D32] ring-2 ring-[#103D32]/20"
-                      : "border-[#E8E0D0] text-[#66726A] hover:border-[#C5A264]"
-                  }`}
-                >
-                  <div className="text-xs font-bold text-[#18241E]">{item.label}</div>
-                  <div className="text-[11px] font-semibold text-[#A07D3E] mt-0.5">{item.desc}</div>
-                  <div className="text-[10px] text-[#66726A] mt-1">{item.sub}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Transparent Live Pricing Callout */}
-          <div className="bg-[#FAF6ED] p-4 rounded-2xl border border-[#E8E0D0] flex items-center justify-between">
-            <div>
-              <span className="text-[11px] text-[#66726A] block">Estimated Base Price</span>
-              <span className="text-xs font-semibold text-[#18241E]">
-                {formatPriceINR(perPersonPrice)} × {paxCount} pilgrim{paxCount > 1 ? "s" : ""}
-              </span>
-            </div>
-            <div className="text-right">
-              <span className="font-display text-2xl font-bold text-[#103D32]">
-                {formatPriceINR(baseTotal)}
-              </span>
-              <span className="text-[10px] text-[#66726A] block">All taxes & GST included</span>
-            </div>
-          </div>
-
-          {/* Action */}
-          <div className="flex justify-end pt-4 border-t border-[#F0EAE0]">
-            <Button onClick={() => setStep(2)} className="gap-2 bg-[#103D32] hover:bg-[#1F5446] text-white px-7">
-              <span>Continue to Travelers</span>
-              <ArrowRight className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* ================= STEP 2: TRAVELERS INFORMATION ================= */}
-      {step === 2 && (
-        <div className="bg-white rounded-3xl border border-[#E8E0D0] p-6 sm:p-8 space-y-6 shadow-2xs">
-          <div>
-            <h3 className="font-display text-2xl font-bold text-[#103D32]">
-              Traveler Information
-            </h3>
-            <p className="text-xs text-[#66726A] mt-1">
-              Required by the Saudi Ministry of Hajj & Umrah for visa issuance and hotel room reservation.
-            </p>
-          </div>
-
-          {/* Lead Traveler Contact */}
-          <div className="p-5 rounded-2xl bg-[#FAF6ED] border border-[#E8E0D0] space-y-4">
-            <h4 className="text-xs font-bold text-[#103D32] uppercase tracking-wider flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-[#C5A264]" />
-              Lead Pilgrim / Contact Person
-            </h4>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="space-y-1">
-                <label className="text-[11px] font-medium text-[#18241E]">
-                  Full Legal Name (as per Passport) *
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Mohammed Farhan Khan"
-                  value={contactName}
-                  onChange={(e) => setContactName(e.target.value)}
-                  className="w-full bg-white border border-[#E8E0D0] rounded-xl px-3 py-2 text-xs text-[#18241E] focus:outline-none focus:border-[#103D32]"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[11px] font-medium text-[#18241E]">
-                  Contact Email (for Itinerary & Visa) *
-                </label>
-                <input
-                  type="email"
-                  placeholder="name@example.com"
-                  value={contactEmail}
-                  onChange={(e) => setContactEmail(e.target.value)}
-                  className="w-full bg-white border border-[#E8E0D0] rounded-xl px-3 py-2 text-xs text-[#18241E] focus:outline-none focus:border-[#103D32]"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[11px] font-medium text-[#18241E]">
-                  Mobile Phone Number *
-                </label>
-                <input
-                  type="tel"
-                  placeholder="+91 98200 12345"
-                  value={contactPhone}
-                  onChange={(e) => setContactPhone(e.target.value)}
-                  className="w-full bg-white border border-[#E8E0D0] rounded-xl px-3 py-2 text-xs text-[#18241E] focus:outline-none focus:border-[#103D32]"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Individual Travelers List */}
-          <div className="space-y-4">
-            <h4 className="text-xs font-bold text-[#18241E] uppercase tracking-wider">
-              Pilgrim Passenger List ({travellers.length})
-            </h4>
-
-            {travellers.map((traveller, idx) => (
-              <div
-                key={idx}
-                className="p-4 rounded-2xl border border-[#E8E0D0] bg-white space-y-3"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-[#103D32]">
-                    Pilgrim {idx + 1} {idx === 0 && "(Lead Traveler)"}
-                  </span>
-                  <span className="text-[10px] text-[#66726A]">Mandatory Ministry Details</span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[10.5px] text-[#66726A]">Full Name</label>
-                    <input
-                      type="text"
-                      placeholder="Name on Passport"
-                      value={traveller.fullName}
-                      onChange={(e) => updateTraveller(idx, "fullName", e.target.value)}
-                      className="w-full bg-[#F8F3E8] border border-[#E8E0D0] rounded-xl px-3 py-2 text-xs text-[#18241E]"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[10.5px] text-[#66726A]">Gender</label>
-                    <select
-                      value={traveller.gender}
-                      onChange={(e) => updateTraveller(idx, "gender", e.target.value)}
-                      className="w-full bg-[#F8F3E8] border border-[#E8E0D0] rounded-xl px-3 py-2 text-xs text-[#18241E]"
-                    >
-                      <option value="MALE">Male</option>
-                      <option value="FEMALE">Female</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[10.5px] text-[#66726A]">Age</label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={100}
-                      value={traveller.age}
-                      onChange={(e) => updateTraveller(idx, "age", parseInt(e.target.value) || 30)}
-                      className="w-full bg-[#F8F3E8] border border-[#E8E0D0] rounded-xl px-3 py-2 text-xs text-[#18241E]"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[10.5px] text-[#66726A]">Passport Number</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Z1234567"
-                      value={traveller.passportNumber}
-                      onChange={(e) => updateTraveller(idx, "passportNumber", e.target.value)}
-                      className="w-full bg-[#F8F3E8] border border-[#E8E0D0] rounded-xl px-3 py-2 text-xs text-[#18241E]"
-                    />
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Navigation */}
-          <div className="flex items-center justify-between pt-4 border-t border-[#F0EAE0]">
-            <Button variant="ghost" onClick={() => setStep(1)} className="gap-2 text-xs">
-              <ArrowLeft className="w-4 h-4" />
-              <span>Back to Package</span>
-            </Button>
-            <Button
-              onClick={() => {
-                if (validateStep2()) setStep(3);
-              }}
-              className="gap-2 bg-[#103D32] hover:bg-[#1F5446] text-white px-7"
-            >
-              <span>Continue to Options</span>
-              <ArrowRight className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* ================= STEP 3: OPTIONS & UPGRADES ================= */}
-      {step === 3 && (
-        <div className="bg-white rounded-3xl border border-[#E8E0D0] p-6 sm:p-8 space-y-6 shadow-2xs">
-          <div>
-            <h3 className="font-display text-2xl font-bold text-[#103D32]">
-              Pilgrimage Upgrades & Additional Services
-            </h3>
-            <p className="text-xs text-[#66726A] mt-1">
-              Enhance your journey with seamless intercity bullet train seats, private airport transfers, and Zamzam doorstep delivery.
-            </p>
-          </div>
-
-          <div className="space-y-4">
-            {/* Upgrade 1: Bullet Train Business Class */}
-            <label
-              className={`p-5 rounded-2xl border flex items-start justify-between gap-4 cursor-pointer transition-all ${
-                upgradeBulletTrain
-                  ? "bg-[#FAF6ED] border-[#103D32] ring-1 ring-[#103D32]"
-                  : "border-[#E8E0D0] hover:border-[#C5A264]"
-              }`}
-            >
-              <div className="flex items-start gap-3.5">
-                <input
-                  type="checkbox"
-                  checked={upgradeBulletTrain}
-                  onChange={(e) => setUpgradeBulletTrain(e.target.checked)}
-                  className="mt-1 w-4 h-4 rounded text-[#103D32] focus:ring-[#103D32]"
-                />
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Train className="w-4 h-4 text-[#C5A264]" />
-                    <span className="text-xs font-bold text-[#103D32]">
-                      Haramain High-Speed Bullet Train (Business Class Upgrade)
-                    </span>
-                  </div>
-                  <p className="text-xs text-[#66726A]">
-                    Upgrade from standard coach to spacious Business Class between Makkah and Madinah with hot meal and priority boarding.
-                  </p>
-                </div>
-              </div>
-              <div className="text-right shrink-0">
-                <span className="text-xs font-bold text-[#103D32]">+₹6,500</span>
-                <span className="text-[10px] text-[#66726A] block">per pilgrim</span>
-              </div>
-            </label>
-
-            {/* Upgrade 2: Private VIP Airport Transfer */}
-            <label
-              className={`p-5 rounded-2xl border flex items-start justify-between gap-4 cursor-pointer transition-all ${
-                upgradePrivateVehicle
-                  ? "bg-[#FAF6ED] border-[#103D32] ring-1 ring-[#103D32]"
-                  : "border-[#E8E0D0] hover:border-[#C5A264]"
-              }`}
-            >
-              <div className="flex items-start gap-3.5">
-                <input
-                  type="checkbox"
-                  checked={upgradePrivateVehicle}
-                  onChange={(e) => setUpgradePrivateVehicle(e.target.checked)}
-                  className="mt-1 w-4 h-4 rounded text-[#103D32] focus:ring-[#103D32]"
-                />
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Car className="w-4 h-4 text-[#C5A264]" />
-                    <span className="text-xs font-bold text-[#103D32]">
-                      Private Luxury GMC Yukon / Lexus Chauffeur Transfer
-                    </span>
-                  </div>
-                  <p className="text-xs text-[#66726A]">
-                    Direct private transfer from Jeddah Airport to your hotel lobby. Zero waiting for group tour buses.
-                  </p>
-                </div>
-              </div>
-              <div className="text-right shrink-0">
-                <span className="text-xs font-bold text-[#103D32]">+₹12,000</span>
-                <span className="text-[10px] text-[#66726A] block">entire family</span>
-              </div>
-            </label>
-
-            {/* Upgrade 3: 5L Zamzam Doorstep Delivery */}
-            <label
-              className={`p-5 rounded-2xl border flex items-start justify-between gap-4 cursor-pointer transition-all ${
-                upgradeZamzamDoorstep
-                  ? "bg-[#FAF6ED] border-[#103D32] ring-1 ring-[#103D32]"
-                  : "border-[#E8E0D0] hover:border-[#C5A264]"
-              }`}
-            >
-              <div className="flex items-start gap-3.5">
-                <input
-                  type="checkbox"
-                  checked={upgradeZamzamDoorstep}
-                  onChange={(e) => setUpgradeZamzamDoorstep(e.target.checked)}
-                  className="mt-1 w-4 h-4 rounded text-[#103D32] focus:ring-[#103D32]"
-                />
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <Droplets className="w-4 h-4 text-[#C5A264]" />
-                    <span className="text-xs font-bold text-[#103D32]">
-                      5-Liter Sealed Zamzam Water Home Dispatch
-                    </span>
-                  </div>
-                  <p className="text-xs text-[#66726A]">
-                    Sealed government-certified Zamzam water delivered safely to your home address upon return to India.
-                  </p>
-                </div>
-              </div>
-              <div className="text-right shrink-0">
-                <span className="text-xs font-bold text-[#103D32]">+₹1,200</span>
-                <span className="text-[10px] text-[#66726A] block">per pilgrim</span>
-              </div>
-            </label>
-          </div>
-
-          {/* Navigation */}
-          <div className="flex items-center justify-between pt-4 border-t border-[#F0EAE0]">
-            <Button variant="ghost" onClick={() => setStep(2)} className="gap-2 text-xs">
-              <ArrowLeft className="w-4 h-4" />
-              <span>Back to Travelers</span>
-            </Button>
-            <Button
-              onClick={() => setStep(4)}
-              className="gap-2 bg-[#103D32] hover:bg-[#1F5446] text-white px-7"
-            >
-              <span>Continue to Review</span>
-              <ArrowRight className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* ================= STEP 4: REVIEW & SUMMARY ================= */}
-      {step === 4 && (
-        <div className="bg-white rounded-3xl border border-[#E8E0D0] p-6 sm:p-8 space-y-6 shadow-2xs">
-          <div>
-            <h3 className="font-display text-2xl font-bold text-[#103D32]">
-              Review Pilgrimage Summary
-            </h3>
-            <p className="text-xs text-[#66726A] mt-1">
-              Please double check all selections before proceeding to secure payment.
-            </p>
-          </div>
-
-          {/* Summary Details Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="p-4 rounded-2xl bg-[#F8F3E8] border border-[#E8E0D0] space-y-2">
-              <span className="text-[10px] font-bold text-[#A07D3E] uppercase tracking-wider block">
-                Package & Departure
-              </span>
-              <div className="font-display text-base font-bold text-[#103D32]">
-                {packageData.name}
-              </div>
-              <div className="text-xs text-[#66726A]">
-                Ex: <strong>{departureCity}</strong> • Room: <strong>{roomType.replace("_", " ")}</strong>
-              </div>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-[#F8F3E8] border border-[#E8E0D0] space-y-2">
-              <span className="text-[10px] font-bold text-[#A07D3E] uppercase tracking-wider block">
-                Pilgrims ({paxCount})
-              </span>
-              <div className="text-xs font-semibold text-[#18241E]">
-                Lead: {contactName} ({contactPhone})
-              </div>
-              <div className="text-xs text-[#66726A]">
-                {travellers.map((t) => t.fullName).filter(Boolean).join(", ")}
-              </div>
-            </div>
-          </div>
-
-          {/* Itemized Price Summary */}
-          <div className="p-5 rounded-2xl bg-white border border-[#E8E0D0] space-y-3">
-            <h4 className="text-xs font-bold text-[#103D32] uppercase tracking-wider">
-              Transparent Price Breakdown
-            </h4>
-            <div className="space-y-2 text-xs">
-              <div className="flex justify-between text-[#66726A]">
-                <span>Base Package Rate ({roomType.replace("_", " ")}):</span>
-                <span>{formatPriceINR(perPersonPrice)} × {paxCount}</span>
-              </div>
-
-              {upgradeBulletTrain && (
-                <div className="flex justify-between text-[#66726A]">
-                  <span>Bullet Train Business Upgrade:</span>
-                  <span>{formatPriceINR(6500 * paxCount)}</span>
-                </div>
-              )}
-
-              {upgradePrivateVehicle && (
-                <div className="flex justify-between text-[#66726A]">
-                  <span>Private Chauffeur Airport Transfer:</span>
-                  <span>{formatPriceINR(12000)}</span>
-                </div>
-              )}
-
-              {upgradeZamzamDoorstep && (
-                <div className="flex justify-between text-[#66726A]">
-                  <span>5L Zamzam Doorstep Dispatch:</span>
-                  <span>{formatPriceINR(1200 * paxCount)}</span>
-                </div>
-              )}
-
-              <div className="flex justify-between text-[#66726A]">
-                <span>Direct flights & visa with medical insurance:</span>
-                <span className="text-emerald-700 font-semibold">Included</span>
-              </div>
-
-              <div className="flex justify-between text-[#66726A]">
-                <span>Applicable GST (5%):</span>
-                <span className="text-emerald-700 font-semibold">Included</span>
-              </div>
-
-              <div className="flex justify-between font-bold text-lg text-[#103D32] pt-3 border-t border-[#E8E0D0]">
-                <span>Grand Total:</span>
-                <span>{formatPriceINR(grandTotal)}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Cancellation Terms Acknowledgement */}
-          <div className="p-4 rounded-2xl border border-[#E8E0D0] bg-[#FAF6ED] space-y-2">
-            <label className="flex items-start gap-3 cursor-pointer text-xs text-[#18241E]">
-              <input
-                type="checkbox"
-                checked={agreedToTerms}
-                onChange={(e) => setAgreedToTerms(e.target.checked)}
-                className="mt-0.5 rounded border-[#E8E0D0] text-[#103D32] focus:ring-[#103D32] h-4 w-4 shrink-0"
-              />
-              <span>
-                I agree to the Ziyara{" "}
-                <a href="/terms" target="_blank" className="text-[#103D32] underline font-semibold">
-                  Terms of Service
-                </a>{" "}
-                and acknowledge the{" "}
-                <a href="/cancellation-policy" target="_blank" className="text-[#103D32] underline font-semibold">
-                  Cancellation & Refund Policy
-                </a>
-                . I understand this booking is registered with verified concierge confirmation.
-              </span>
-            </label>
-          </div>
-
-          {/* Navigation */}
-          <div className="flex items-center justify-between pt-4 border-t border-[#F0EAE0]">
-            <Button variant="ghost" onClick={() => setStep(3)} className="gap-2 text-xs">
-              <ArrowLeft className="w-4 h-4" />
-              <span>Back to Options</span>
-            </Button>
-            <Button
-              onClick={handleCreateBookingOrder}
-              disabled={isSubmitting || !agreedToTerms}
-              className="gap-2 bg-[#103D32] hover:bg-[#1F5446] text-white font-bold px-8"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Preparing Order...</span>
-                </>
-              ) : (
-                <>
-                  <Lock className="w-4 h-4" />
-                  <span>Proceed to Payment</span>
-                  <ArrowRight className="w-4 h-4" />
-                </>
-              )}
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* ================= STEP 5: PAYMENT & VERIFICATION ================= */}
-      {step === 5 && (
-        <div className="bg-white rounded-3xl border border-[#E8E0D0] p-6 sm:p-8 space-y-6 shadow-2xs">
-          <div>
-            <div className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 mb-2">
-              <Lock className="w-3.5 h-3.5" />
-              <span>256-Bit Encrypted Payment Gateway</span>
-            </div>
-            <h3 className="font-display text-2xl font-bold text-[#103D32]">
-              Complete Your Pilgrimage Payment
-            </h3>
-            <p className="text-xs text-[#66726A] mt-1">
-              Select your preferred method to complete payment of <strong>{formatPriceINR(grandTotal)}</strong>.
-            </p>
-          </div>
-
-          {/* Payment Method Selector */}
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { id: "UPI", label: "UPI / QR", icon: Smartphone },
-              { id: "CARD", label: "Cards (Visa/MC)", icon: CreditCard },
-              { id: "NETBANKING", label: "Netbanking", icon: Building },
-            ].map((m) => {
-              const Icon = m.icon;
-              return (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => setPaymentMethod(m.id as any)}
-                  className={`p-3.5 rounded-2xl border flex flex-col items-center gap-1.5 text-xs font-semibold transition-all cursor-pointer ${
-                    paymentMethod === m.id
-                      ? "bg-[#FAF6ED] border-[#103D32] text-[#103D32] ring-2 ring-[#103D32]/20"
-                      : "border-[#E8E0D0] text-[#66726A] hover:border-[#C5A264]"
-                  }`}
-                >
-                  <Icon className="w-5 h-5 text-[#103D32]" />
-                  <span>{m.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Payment Input / Details */}
-          {paymentMethod === "UPI" && (
-            <div className="p-4 rounded-2xl bg-[#F8F3E8] border border-[#E8E0D0] space-y-2">
-              <label className="text-xs font-semibold text-[#18241E] block">
-                Enter your Virtual Payment Address (VPA)
-              </label>
-              <input
-                type="text"
-                value={upiId}
-                onChange={(e) => setUpiId(e.target.value)}
-                placeholder="e.g. yourname@oksbi"
-                className="w-full bg-white border border-[#E8E0D0] rounded-xl px-4 py-2.5 text-xs text-[#18241E] font-medium"
-              />
-              <span className="text-[10px] text-[#66726A] block">
-                Supports Google Pay, PhonePe, Paytm, BHIM, and all UPI apps.
-              </span>
-            </div>
-          )}
-
-          {paymentMethod === "CARD" && (
-            <div className="p-4 rounded-2xl bg-[#F8F3E8] border border-[#E8E0D0] space-y-3">
-              <div className="space-y-1">
-                <label className="text-[11px] font-medium text-[#18241E]">Card Number</label>
-                <input
-                  type="text"
-                  placeholder="4532 •••• •••• 8910"
-                  defaultValue="4532 8910 2341 8910"
-                  className="w-full bg-white border border-[#E8E0D0] rounded-xl px-4 py-2 text-xs text-[#18241E]"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-[10.5px] text-[#66726A]">Expiry</label>
-                  <input
-                    type="text"
-                    placeholder="MM/YY"
-                    defaultValue="08/29"
-                    className="w-full bg-white border border-[#E8E0D0] rounded-xl px-3 py-2 text-xs"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10.5px] text-[#66726A]">CVV</label>
-                  <input
-                    type="password"
-                    placeholder="•••"
-                    defaultValue="786"
-                    className="w-full bg-white border border-[#E8E0D0] rounded-xl px-3 py-2 text-xs"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {paymentMethod === "NETBANKING" && (
-            <div className="p-4 rounded-2xl bg-[#F8F3E8] border border-[#E8E0D0] space-y-2">
-              <label className="text-xs font-semibold text-[#18241E] block">Select Your Bank</label>
-              <select className="w-full bg-white border border-[#E8E0D0] rounded-xl px-4 py-2.5 text-xs text-[#18241E]">
-                <option>State Bank of India</option>
-                <option>HDFC Bank</option>
-                <option>ICICI Bank</option>
-                <option>Axis Bank</option>
-                <option>Kotak Mahindra Bank</option>
-              </select>
-            </div>
-          )}
-
-          {/* Security Assurance */}
-          <div className="flex items-center gap-2.5 text-xs text-[#66726A]">
-            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>
-              Your transaction is verified server-side with zero risk of duplicate charge.
+        {/* Mobile Stepper Header */}
+        <div className="sm:hidden space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-semibold text-slate-500 uppercase tracking-wider text-[11px]">
+              Step {step} of 5
+            </span>
+            <span className="font-bold text-[#103D32]">
+              {stepsList[step - 1]?.label}
             </span>
           </div>
-
-          {/* Action */}
-          <div className="flex items-center justify-between pt-4 border-t border-[#F0EAE0]">
-            <Button variant="ghost" onClick={() => setStep(4)} disabled={isSubmitting} className="gap-2 text-xs">
-              <ArrowLeft className="w-4 h-4" />
-              <span>Back to Review</span>
-            </Button>
-            <Button
-              onClick={handleVerifyAndCompletePayment}
-              disabled={isSubmitting}
-              className="gap-2 bg-[#103D32] hover:bg-[#1F5446] text-white font-bold px-8 shadow-sm cursor-pointer"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Verifying Payment...</span>
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Pay {formatPriceINR(grandTotal)} & Confirm</span>
-                </>
-              )}
-            </Button>
+          <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+            <div
+              className="bg-[#103D32] h-full transition-all duration-300 rounded-full"
+              style={{ width: `${(step / 5) * 100}%` }}
+            />
           </div>
         </div>
+      </div>
+
+      {/* Error Alert */}
+      {errorMessage && (
+        <div className="p-4 rounded-2xl bg-amber-50/90 border border-amber-200 text-amber-900 text-xs sm:text-sm flex items-start gap-3 animate-in fade-in">
+          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          <div className="flex-1 font-medium">{errorMessage}</div>
+          <button
+            onClick={() => setErrorMessage(null)}
+            className="text-amber-700 hover:text-amber-900 text-xs font-semibold"
+          >
+            Dismiss
+          </button>
+        </div>
       )}
+
+      {/* ================= MAIN 2-COLUMN GRID ================= */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        {/* ================= LEFT COLUMN: STEP FORMS ================= */}
+        <div className="lg:col-span-7 xl:col-span-8 space-y-6">
+          {/* ================= STEP 1: DATES & ROOM OCCUPANCY ================= */}
+          {step === 1 && (
+            <div className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-8 space-y-7 shadow-xs">
+              <div>
+                <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#103D32] bg-[#103D32]/5 px-3 py-1 rounded-full mb-2">
+                  <Calendar className="w-3.5 h-3.5 text-[#C5A264]" />
+                  <span>Step 1: Dates & Rooms</span>
+                </div>
+                <h2 className="font-display text-2xl sm:text-3xl font-bold text-slate-900">
+                  Select Dates & Room Occupancy
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-500 mt-1">
+                  Choose your departure city, available travel dates, and room sharing type.
+                </p>
+              </div>
+
+              {/* Departure City */}
+              <div className="space-y-3">
+                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                  <Plane className="w-4 h-4 text-[#C5A264]" />
+                  <span>Departure Airport / City</span>
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  {packageData.departureCities.map((city) => {
+                    const isSelected = departureCity === city;
+                    return (
+                      <button
+                        key={city}
+                        type="button"
+                        onClick={() => setDepartureCity(city)}
+                        className={`p-3 rounded-2xl border text-center transition-all cursor-pointer ${
+                          isSelected
+                            ? "bg-[#103D32] border-[#103D32] text-white shadow-xs font-bold"
+                            : "bg-slate-50/50 border-slate-200 text-slate-700 hover:border-slate-300 font-medium"
+                        }`}
+                      >
+                        <div className="text-xs sm:text-sm">{city}</div>
+                        <div
+                          className={`text-[10px] mt-0.5 ${
+                            isSelected ? "text-emerald-200" : "text-slate-400"
+                          }`}
+                        >
+                          Direct Flight
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Departure Date Selection Cards */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-[#C5A264]" />
+                    <span>Available Travel Dates</span>
+                  </label>
+                  <span className="text-[11px] text-slate-500">
+                    {packageData.durationDays} Days / {packageData.durationNights} Nights
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {packageData.departures.map((dep) => {
+                    const isSelected = departureId === dep.id;
+                    const dStart = new Date(dep.departureDate).toLocaleDateString("en-GB", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    });
+                    const dEnd = new Date(dep.returnDate).toLocaleDateString("en-GB", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    });
+
+                    return (
+                      <button
+                        key={dep.id}
+                        type="button"
+                        onClick={() => setDepartureId(dep.id)}
+                        className={`p-4 rounded-2xl border text-left transition-all cursor-pointer relative ${
+                          isSelected
+                            ? "bg-emerald-50/40 border-[#103D32] ring-2 ring-[#103D32]/15 shadow-xs"
+                            : "bg-white border-slate-200 hover:border-slate-300 text-slate-700"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="text-xs sm:text-sm font-bold text-slate-900">
+                              {dStart} – {dEnd}
+                            </div>
+                            <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1.5">
+                              <Clock className="w-3 h-3 text-slate-400" />
+                              <span>{packageData.durationDays} Days Tour</span>
+                            </div>
+                          </div>
+                          <span
+                            className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                              isSelected
+                                ? "bg-[#103D32] text-white"
+                                : dep.availableSeats <= 6
+                                ? "bg-amber-100 text-amber-800"
+                                : "bg-slate-100 text-slate-600"
+                            }`}
+                          >
+                            {dep.availableSeats} seats left
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Number of Pilgrims Counter */}
+              <div className="space-y-3 pt-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                    <Users className="w-4 h-4 text-[#C5A264]" />
+                    <span>Number of Pilgrims</span>
+                  </label>
+                  <span className="text-xs font-semibold text-[#103D32]">
+                    {paxCount} {paxCount === 1 ? "Pilgrim" : "Pilgrims"}
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {[1, 2, 3, 4, 5, 6, 8].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => handlePaxChange(num)}
+                      className={`h-11 px-4 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                        paxCount === num
+                          ? "bg-[#103D32] text-white border-[#103D32] shadow-xs"
+                          : "bg-slate-50 border-slate-200 text-slate-700 hover:border-slate-300"
+                      }`}
+                    >
+                      {num} {num === 1 ? "Guest" : "Guests"}
+                    </button>
+                  ))}
+                  <div className="inline-flex items-center border border-slate-200 rounded-xl bg-slate-50 p-1">
+                    <button
+                      type="button"
+                      onClick={() => handlePaxChange(paxCount - 1)}
+                      disabled={paxCount <= 1}
+                      className="w-9 h-9 rounded-lg flex items-center justify-center font-bold text-slate-600 hover:bg-white disabled:opacity-30 cursor-pointer"
+                    >
+                      –
+                    </button>
+                    <span className="w-8 text-center text-xs font-bold text-slate-900">
+                      {paxCount}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handlePaxChange(paxCount + 1)}
+                      disabled={paxCount >= 20}
+                      className="w-9 h-9 rounded-lg flex items-center justify-center font-bold text-slate-600 hover:bg-white disabled:opacity-30 cursor-pointer"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Room Occupancy Selection Cards */}
+              <div className="space-y-3 pt-1">
+                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                  <Bed className="w-4 h-4 text-[#C5A264]" />
+                  <span>Room Occupancy Preference</span>
+                </label>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {[
+                    {
+                      id: "SHARING_4",
+                      title: "Quad Sharing (4 Beds)",
+                      subtitle: "Included in Base Rate",
+                      desc: "Most popular for families and group travelers.",
+                      badge: "Best Value",
+                    },
+                    {
+                      id: "TRIPLE_3",
+                      title: "Triple Room (3 Beds)",
+                      subtitle: "+10% supplement",
+                      desc: "Comfortable spacious sharing for 3 guests.",
+                      badge: "Spacious",
+                    },
+                    {
+                      id: "DOUBLE_2",
+                      title: "Double / Couple Room",
+                      subtitle: "+25% supplement",
+                      desc: "Dedicated private room with attached bath.",
+                      badge: "Couples Choice",
+                    },
+                    {
+                      id: "SINGLE_1",
+                      title: "Single Private Suite",
+                      subtitle: "+65% supplement",
+                      desc: "100% private solo room with luxury privacy.",
+                      badge: "Solo Luxury",
+                    },
+                  ].map((item) => {
+                    const isSelected = roomType === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setRoomType(item.id)}
+                        className={`p-4 rounded-2xl border text-left transition-all cursor-pointer relative ${
+                          isSelected
+                            ? "bg-emerald-50/40 border-[#103D32] ring-2 ring-[#103D32]/15 shadow-xs"
+                            : "bg-white border-slate-200 hover:border-slate-300"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs sm:text-sm font-bold text-slate-900">
+                            {item.title}
+                          </span>
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              isSelected
+                                ? "bg-[#103D32] text-white"
+                                : "bg-slate-100 text-slate-600"
+                            }`}
+                          >
+                            {item.badge}
+                          </span>
+                        </div>
+                        <div className="text-xs font-semibold text-[#A07D3E] mt-1">
+                          {item.subtitle}
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-1 line-clamp-2">
+                          {item.desc}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Action */}
+              <div className="flex justify-end pt-5 border-t border-slate-100">
+                <Button
+                  onClick={() => {
+                    setErrorMessage(null);
+                    setStep(2);
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                  className="gap-2 bg-[#103D32] hover:bg-[#194E41] text-white font-semibold px-8 py-3 rounded-xl shadow-xs cursor-pointer text-sm"
+                >
+                  <span>Continue to Travelers</span>
+                  <ArrowRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* ================= STEP 2: TRAVELERS INFORMATION ================= */}
+          {step === 2 && (
+            <div className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-8 space-y-7 shadow-xs">
+              <div>
+                <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#103D32] bg-[#103D32]/5 px-3 py-1 rounded-full mb-2">
+                  <Users className="w-3.5 h-3.5 text-[#C5A264]" />
+                  <span>Step 2: Pilgrim & Contact Details</span>
+                </div>
+                <h2 className="font-display text-2xl sm:text-3xl font-bold text-slate-900">
+                  Traveler Information
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-500 mt-1">
+                  Required by the Saudi Ministry of Hajj & Umrah for electronic visa issuance and verified hotel vouchers.
+                </p>
+              </div>
+
+              {/* Lead Pilgrim / Primary Contact Card */}
+              <div className="p-5 sm:p-6 rounded-2xl bg-slate-50/80 border border-slate-200/80 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                      Primary Contact / Lead Pilgrim
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-slate-500">Receives tickets & visa</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-700">
+                      Full Legal Name *
+                    </label>
+                    <div className="relative">
+                      <User className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                      <input
+                        type="text"
+                        placeholder="e.g. Mohammed Farhan Khan"
+                        value={contactName}
+                        onChange={(e) => setContactName(e.target.value)}
+                        className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-3 py-2.5 text-xs sm:text-sm text-slate-900 font-medium focus:ring-2 focus:ring-[#103D32]/20 focus:border-[#103D32] outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-700">
+                      Email Address *
+                    </label>
+                    <div className="relative">
+                      <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                      <input
+                        type="email"
+                        placeholder="farhan@example.com"
+                        value={contactEmail}
+                        onChange={(e) => setContactEmail(e.target.value)}
+                        className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-3 py-2.5 text-xs sm:text-sm text-slate-900 font-medium focus:ring-2 focus:ring-[#103D32]/20 focus:border-[#103D32] outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-700">
+                      Mobile (WhatsApp) *
+                    </label>
+                    <div className="relative">
+                      <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                      <input
+                        type="tel"
+                        placeholder="+91 98200 12345"
+                        value={contactPhone}
+                        onChange={(e) => setContactPhone(e.target.value)}
+                        className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-3 py-2.5 text-xs sm:text-sm text-slate-900 font-medium focus:ring-2 focus:ring-[#103D32]/20 focus:border-[#103D32] outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Individual Passengers List */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                    <Users className="w-4 h-4 text-[#C5A264]" />
+                    <span>Pilgrim Passenger Roster ({travellers.length})</span>
+                  </h3>
+                  {travellers.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={copyLeadToTraveler1}
+                      className="text-xs font-semibold text-[#103D32] hover:underline cursor-pointer"
+                    >
+                      Copy Lead Pilgrim to Pilgrim 1
+                    </button>
+                  )}
+                </div>
+
+                {travellers.map((traveller, idx) => (
+                  <div
+                    key={idx}
+                    className="p-4 sm:p-5 rounded-2xl border border-slate-200 bg-white space-y-3.5 hover:border-slate-300 transition-colors"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-full bg-[#103D32] text-white flex items-center justify-center text-xs font-bold">
+                          {idx + 1}
+                        </span>
+                        <span className="text-xs sm:text-sm font-bold text-slate-900">
+                          Pilgrim {idx + 1} {idx === 0 && "(Lead Traveler)"}
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-slate-400">Passport Details</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                      <div className="sm:col-span-1 space-y-1">
+                        <label className="text-[11px] font-medium text-slate-600">
+                          Full Legal Name *
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="As on passport"
+                          value={traveller.fullName}
+                          onChange={(e) => updateTraveller(idx, "fullName", e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-medium focus:ring-1 focus:ring-[#103D32] outline-none"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-medium text-slate-600">
+                          Gender
+                        </label>
+                        <select
+                          value={traveller.gender}
+                          onChange={(e) => updateTraveller(idx, "gender", e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-medium focus:ring-1 focus:ring-[#103D32] outline-none"
+                        >
+                          <option value="MALE">Male</option>
+                          <option value="FEMALE">Female</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-medium text-slate-600">
+                          Age
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={100}
+                          value={traveller.age}
+                          onChange={(e) =>
+                            updateTraveller(idx, "age", parseInt(e.target.value) || 30)
+                          }
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-medium focus:ring-1 focus:ring-[#103D32] outline-none"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-medium text-slate-600">
+                          Passport No. (Optional now)
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Z1234567"
+                          value={traveller.passportNumber}
+                          onChange={(e) =>
+                            updateTraveller(idx, "passportNumber", e.target.value)
+                          }
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 font-medium focus:ring-1 focus:ring-[#103D32] outline-none uppercase"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Special Dietary & Mobility Assistance */}
+              <div className="space-y-3 pt-2">
+                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-[#C5A264]" />
+                  <span>Special Requests & Assistance</span>
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    "Wheelchair Assistance at Airport",
+                    "Ground Floor Room Preference",
+                    "Adjoining Family Rooms",
+                    "Diabetic / Low-Sodium Meals",
+                    "Senior Citizen Concierge Support",
+                  ].map((tag) => {
+                    const isSelected = selectedTags.includes(tag);
+                    return (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => toggleRequestTag(tag)}
+                        className={`text-xs px-3 py-1.5 rounded-full border transition-all cursor-pointer ${
+                          isSelected
+                            ? "bg-[#103D32] text-white border-[#103D32]"
+                            : "bg-slate-50 border-slate-200 text-slate-600 hover:border-slate-300"
+                        }`}
+                      >
+                        {isSelected ? "✓ " : "+ "}
+                        {tag}
+                      </button>
+                    );
+                  })}
+                </div>
+                <input
+                  type="text"
+                  placeholder="Other notes (e.g. traveling with infants, flight seat preference)..."
+                  value={specialRequests}
+                  onChange={(e) => setSpecialRequests(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-900 focus:ring-1 focus:ring-[#103D32] outline-none"
+                />
+              </div>
+
+              {/* Navigation */}
+              <div className="flex items-center justify-between pt-5 border-t border-slate-100">
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setErrorMessage(null);
+                    setStep(1);
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                  className="gap-2 text-xs sm:text-sm text-slate-600 hover:text-slate-900 cursor-pointer"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>Back to Dates</span>
+                </Button>
+                <Button
+                  onClick={() => {
+                    if (validateStep2()) {
+                      setStep(3);
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    }
+                  }}
+                  className="gap-2 bg-[#103D32] hover:bg-[#194E41] text-white font-semibold px-8 py-3 rounded-xl shadow-xs cursor-pointer text-sm"
+                >
+                  <span>Continue to Upgrades</span>
+                  <ArrowRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* ================= STEP 3: PILGRIMAGE UPGRADES ================= */}
+          {step === 3 && (
+            <div className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-8 space-y-7 shadow-xs">
+              <div>
+                <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#103D32] bg-[#103D32]/5 px-3 py-1 rounded-full mb-2">
+                  <Sparkles className="w-3.5 h-3.5 text-[#C5A264]" />
+                  <span>Step 3: Pilgrimage Upgrades</span>
+                </div>
+                <h2 className="font-display text-2xl sm:text-3xl font-bold text-slate-900">
+                  Curated Pilgrimage Upgrades
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-500 mt-1">
+                  Enhance your sacred journey with high-speed bullet train transfers, private luxury chauffeur, and certified Zamzam delivery.
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                {/* Upgrade 1: Haramain Bullet Train */}
+                <label
+                  className={`p-5 rounded-2xl border flex items-start justify-between gap-4 cursor-pointer transition-all ${
+                    upgradeBulletTrain
+                      ? "bg-emerald-50/40 border-[#103D32] ring-2 ring-[#103D32]/15 shadow-xs"
+                      : "bg-white border-slate-200 hover:border-slate-300"
+                  }`}
+                >
+                  <div className="flex items-start gap-3.5">
+                    <input
+                      type="checkbox"
+                      checked={upgradeBulletTrain}
+                      onChange={(e) => setUpgradeBulletTrain(e.target.checked)}
+                      className="mt-1 w-4 h-4 rounded text-[#103D32] focus:ring-[#103D32] cursor-pointer"
+                    />
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <Train className="w-4 h-4 text-[#C5A264]" />
+                        <span className="text-xs sm:text-sm font-bold text-slate-900">
+                          Haramain High-Speed Bullet Train (Business Class Upgrade)
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        Travel between Makkah and Madinah in just 2 hours at 300 km/h. Includes Business Class seating, complimentary hot meals, and priority luggage handling.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="text-xs sm:text-sm font-bold text-[#103D32]">
+                      +₹6,500
+                    </span>
+                    <span className="text-[10px] text-slate-400 block">per pilgrim</span>
+                  </div>
+                </label>
+
+                {/* Upgrade 2: Private VIP Airport Chauffeur */}
+                <label
+                  className={`p-5 rounded-2xl border flex items-start justify-between gap-4 cursor-pointer transition-all ${
+                    upgradePrivateVehicle
+                      ? "bg-emerald-50/40 border-[#103D32] ring-2 ring-[#103D32]/15 shadow-xs"
+                      : "bg-white border-slate-200 hover:border-slate-300"
+                  }`}
+                >
+                  <div className="flex items-start gap-3.5">
+                    <input
+                      type="checkbox"
+                      checked={upgradePrivateVehicle}
+                      onChange={(e) => setUpgradePrivateVehicle(e.target.checked)}
+                      className="mt-1 w-4 h-4 rounded text-[#103D32] focus:ring-[#103D32] cursor-pointer"
+                    />
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <Car className="w-4 h-4 text-[#C5A264]" />
+                        <span className="text-xs sm:text-sm font-bold text-slate-900">
+                          Private Luxury GMC Yukon / Lexus Chauffeur Transfer
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        Direct private airport pickup from Jeddah or Madinah to your hotel lobby. Zero waiting for group tour buses or luggage delays.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="text-xs sm:text-sm font-bold text-[#103D32]">
+                      +₹12,000
+                    </span>
+                    <span className="text-[10px] text-slate-400 block">entire family</span>
+                  </div>
+                </label>
+
+                {/* Upgrade 3: 5L Zamzam Doorstep Delivery */}
+                <label
+                  className={`p-5 rounded-2xl border flex items-start justify-between gap-4 cursor-pointer transition-all ${
+                    upgradeZamzamDoorstep
+                      ? "bg-emerald-50/40 border-[#103D32] ring-2 ring-[#103D32]/15 shadow-xs"
+                      : "bg-white border-slate-200 hover:border-slate-300"
+                  }`}
+                >
+                  <div className="flex items-start gap-3.5">
+                    <input
+                      type="checkbox"
+                      checked={upgradeZamzamDoorstep}
+                      onChange={(e) => setUpgradeZamzamDoorstep(e.target.checked)}
+                      className="mt-1 w-4 h-4 rounded text-[#103D32] focus:ring-[#103D32] cursor-pointer"
+                    />
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <Droplets className="w-4 h-4 text-[#C5A264]" />
+                        <span className="text-xs sm:text-sm font-bold text-slate-900">
+                          5-Liter Sealed Zamzam Water Home Delivery
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 leading-relaxed">
+                        Sealed government-certified 5L Zamzam container delivered securely to your home address in India upon return. Zero airport baggage hassle.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="text-xs sm:text-sm font-bold text-[#103D32]">
+                      +₹1,200
+                    </span>
+                    <span className="text-[10px] text-slate-400 block">per pilgrim</span>
+                  </div>
+                </label>
+              </div>
+
+              {/* Navigation */}
+              <div className="flex items-center justify-between pt-5 border-t border-slate-100">
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setErrorMessage(null);
+                    setStep(2);
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                  className="gap-2 text-xs sm:text-sm text-slate-600 hover:text-slate-900 cursor-pointer"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>Back to Travelers</span>
+                </Button>
+                <Button
+                  onClick={() => {
+                    setErrorMessage(null);
+                    setStep(4);
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                  className="gap-2 bg-[#103D32] hover:bg-[#194E41] text-white font-semibold px-8 py-3 rounded-xl shadow-xs cursor-pointer text-sm"
+                >
+                  <span>Continue to Review</span>
+                  <ArrowRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* ================= STEP 4: REVIEW & CONFIRMATION ================= */}
+          {step === 4 && (
+            <div className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-8 space-y-7 shadow-xs">
+              <div>
+                <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#103D32] bg-[#103D32]/5 px-3 py-1 rounded-full mb-2">
+                  <ShieldCheck className="w-3.5 h-3.5 text-[#C5A264]" />
+                  <span>Step 4: Review Summary</span>
+                </div>
+                <h2 className="font-display text-2xl sm:text-3xl font-bold text-slate-900">
+                  Review Pilgrimage Summary
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-500 mt-1">
+                  Double check your group details and itinerary before proceeding to secure payment.
+                </p>
+              </div>
+
+              {/* Summary Cards Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/80 space-y-2">
+                  <span className="text-[10px] font-bold text-[#A07D3E] uppercase tracking-wider block">
+                    Package & Travel Dates
+                  </span>
+                  <div className="font-display text-base font-bold text-slate-900">
+                    {packageData.name}
+                  </div>
+                  <div className="text-xs text-slate-600">
+                    Ex: <strong>{departureCity}</strong> • {formattedDepartureDate} – {formattedReturnDate}
+                  </div>
+                  <div className="text-[11px] text-slate-500">
+                    Room: <strong>{roomType.replace("_", " ")}</strong>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/80 space-y-2">
+                  <span className="text-[10px] font-bold text-[#A07D3E] uppercase tracking-wider block">
+                    Lead Contact & Pilgrims ({paxCount})
+                  </span>
+                  <div className="text-xs font-semibold text-slate-900">
+                    {contactName} ({contactPhone})
+                  </div>
+                  <div className="text-xs text-slate-600 truncate">
+                    {contactEmail}
+                  </div>
+                  <div className="text-[11px] text-slate-500 truncate">
+                    Pilgrims: {travellers.map((t) => t.fullName).filter(Boolean).join(", ")}
+                  </div>
+                </div>
+              </div>
+
+              {/* Inclusions & Distance Badges */}
+              <div className="p-4 rounded-2xl border border-slate-200 bg-white space-y-3">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                  Audited Hotel Accommodations & Distance
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div className="flex items-start gap-2.5">
+                    <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="text-slate-900 block">
+                        Makkah: {packageData.makkahHotel?.name || "5-Star Hotel"}
+                      </strong>
+                      <span className="text-slate-500 text-[11px]">
+                        {packageData.makkahHotel?.distanceText || "50m from Haram"} (Walking)
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <MapPin className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="text-slate-900 block">
+                        Madinah: {packageData.madinahHotel?.name || "5-Star Hotel"}
+                      </strong>
+                      <span className="text-slate-500 text-[11px]">
+                        {packageData.madinahHotel?.distanceText || "100m from Prophet's Mosque"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Itemized Price Breakdown */}
+              <div className="p-5 rounded-2xl bg-slate-50/80 border border-slate-200/80 space-y-3">
+                <span className="text-xs font-bold text-slate-900 uppercase tracking-wider block">
+                  Transparent Price Summary
+                </span>
+                <div className="space-y-2 text-xs">
+                  <div className="flex justify-between text-slate-600">
+                    <span>
+                      Base Package ({roomType.replace("_", " ")}):
+                    </span>
+                    <span className="font-medium text-slate-900">
+                      {formatPriceINR(perPersonPrice)} × {paxCount} = {formatPriceINR(baseTotal)}
+                    </span>
+                  </div>
+
+                  {upgradeBulletTrain && (
+                    <div className="flex justify-between text-slate-600">
+                      <span>Bullet Train Business Upgrade:</span>
+                      <span className="font-medium text-slate-900">
+                        {formatPriceINR(6500 * paxCount)}
+                      </span>
+                    </div>
+                  )}
+
+                  {upgradePrivateVehicle && (
+                    <div className="flex justify-between text-slate-600">
+                      <span>Private Chauffeur Airport Transfer:</span>
+                      <span className="font-medium text-slate-900">
+                        {formatPriceINR(12000)}
+                      </span>
+                    </div>
+                  )}
+
+                  {upgradeZamzamDoorstep && (
+                    <div className="flex justify-between text-slate-600">
+                      <span>5L Zamzam Doorstep Dispatch:</span>
+                      <span className="font-medium text-slate-900">
+                        {formatPriceINR(1200 * paxCount)}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between text-slate-600">
+                    <span>Direct Flights & Saudi Ministry Umrah e-Visa:</span>
+                    <span className="text-emerald-700 font-semibold">Included</span>
+                  </div>
+
+                  <div className="flex justify-between text-slate-600">
+                    <span>Applicable GST (5%) & Saudi Tourist Taxes:</span>
+                    <span className="text-emerald-700 font-semibold">Included</span>
+                  </div>
+
+                  <div className="flex justify-between font-bold text-base sm:text-lg text-slate-900 pt-3 border-t border-slate-200">
+                    <span>Grand Total:</span>
+                    <span className="text-[#103D32]">{formatPriceINR(grandTotal)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Terms and Cancellation Agreement */}
+              <div className="p-4 rounded-2xl border border-slate-200 bg-emerald-50/30 space-y-2">
+                <label className="flex items-start gap-3 cursor-pointer text-xs text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={agreedToTerms}
+                    onChange={(e) => setAgreedToTerms(e.target.checked)}
+                    className="mt-0.5 rounded border-slate-300 text-[#103D32] focus:ring-[#103D32] h-4 w-4 shrink-0 cursor-pointer"
+                  />
+                  <span className="leading-relaxed">
+                    I agree to the Ziyara{" "}
+                    <a href="/terms" target="_blank" className="text-[#103D32] underline font-semibold">
+                      Terms of Service
+                    </a>{" "}
+                    and{" "}
+                    <a href="/cancellation-policy" target="_blank" className="text-[#103D32] underline font-semibold">
+                      Cancellation Policy
+                    </a>
+                    . I understand my booking is locked with official Ministry concierge assistance and full price transparency.
+                  </span>
+                </label>
+              </div>
+
+              {/* Navigation */}
+              <div className="flex items-center justify-between pt-5 border-t border-slate-100">
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setErrorMessage(null);
+                    setStep(3);
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                  className="gap-2 text-xs sm:text-sm text-slate-600 hover:text-slate-900 cursor-pointer"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>Back to Upgrades</span>
+                </Button>
+                <Button
+                  onClick={handleCreateBookingOrder}
+                  disabled={isSubmitting || !agreedToTerms}
+                  className="gap-2 bg-[#103D32] hover:bg-[#194E41] text-white font-semibold px-8 py-3 rounded-xl shadow-xs cursor-pointer text-sm disabled:opacity-50"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Preparing Order...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Lock className="w-4 h-4" />
+                      <span>Proceed to Payment</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* ================= STEP 5: PAYMENT & VERIFICATION ================= */}
+          {step === 5 && (
+            <div className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-8 space-y-7 shadow-xs">
+              <div>
+                <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full mb-2">
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>256-Bit SSL Encrypted Payment</span>
+                </div>
+                <h2 className="font-display text-2xl sm:text-3xl font-bold text-slate-900">
+                  Complete Pilgrimage Payment
+                </h2>
+                <p className="text-xs sm:text-sm text-slate-500 mt-1">
+                  Choose your payment method to complete payment of{" "}
+                  <strong className="text-slate-900">{formatPriceINR(grandTotal)}</strong>.
+                </p>
+              </div>
+
+              {/* Payment Method Selector Tabs */}
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { id: "UPI", label: "UPI / QR Code", icon: Smartphone },
+                  { id: "CARD", label: "Debit / Credit Card", icon: CreditCard },
+                  { id: "NETBANKING", label: "Net Banking", icon: Building },
+                ].map((m) => {
+                  const Icon = m.icon;
+                  const isSelected = paymentMethod === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setPaymentMethod(m.id as any)}
+                      className={`p-3.5 rounded-2xl border flex flex-col items-center gap-1.5 text-xs font-semibold transition-all cursor-pointer ${
+                        isSelected
+                          ? "bg-emerald-50/50 border-[#103D32] text-[#103D32] ring-2 ring-[#103D32]/15 shadow-xs"
+                          : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"
+                      }`}
+                    >
+                      <Icon className="w-5 h-5 text-[#103D32]" />
+                      <span>{m.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Payment Method UI Details */}
+              {paymentMethod === "UPI" && (
+                <div className="p-5 rounded-2xl bg-slate-50/80 border border-slate-200/80 space-y-4">
+                  <div className="flex flex-col sm:flex-row items-center gap-6">
+                    {/* Simulated QR Code box */}
+                    <div className="w-36 h-36 bg-white rounded-2xl border border-slate-200 p-3 flex flex-col items-center justify-center text-center shadow-xs shrink-0">
+                      <QrCode className="w-20 h-20 text-[#103D32]" />
+                      <span className="text-[9px] font-bold text-slate-500 mt-1 uppercase">
+                        Instant Scan
+                      </span>
+                    </div>
+
+                    <div className="space-y-3 w-full">
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-700">
+                          Or enter UPI ID / VPA
+                        </label>
+                        <input
+                          type="text"
+                          value={upiId}
+                          onChange={(e) => setUpiId(e.target.value)}
+                          placeholder="e.g. pilgrim@okaxis"
+                          className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-xs sm:text-sm text-slate-900 font-medium focus:ring-1 focus:ring-[#103D32] outline-none"
+                        />
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-[11px] text-slate-500">
+                        <span className="bg-white px-2 py-1 rounded-lg border border-slate-200 font-medium">Google Pay</span>
+                        <span className="bg-white px-2 py-1 rounded-lg border border-slate-200 font-medium">PhonePe</span>
+                        <span className="bg-white px-2 py-1 rounded-lg border border-slate-200 font-medium">Paytm</span>
+                        <span className="bg-white px-2 py-1 rounded-lg border border-slate-200 font-medium">BHIM</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {paymentMethod === "CARD" && (
+                <div className="p-5 rounded-2xl bg-slate-50/80 border border-slate-200/80 space-y-3.5">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-slate-700">Card Number</label>
+                    <input
+                      type="text"
+                      placeholder="4532 •••• •••• 8910"
+                      defaultValue="4532 8910 2341 8910"
+                      className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-xs sm:text-sm text-slate-900 font-mono focus:ring-1 focus:ring-[#103D32] outline-none"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-slate-700">Expiry (MM/YY)</label>
+                      <input
+                        type="text"
+                        placeholder="08/29"
+                        defaultValue="08/29"
+                        className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-xs sm:text-sm text-slate-900 font-mono focus:ring-1 focus:ring-[#103D32] outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-slate-700">CVV</label>
+                      <input
+                        type="password"
+                        placeholder="•••"
+                        defaultValue="786"
+                        className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-xs sm:text-sm text-slate-900 font-mono focus:ring-1 focus:ring-[#103D32] outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {paymentMethod === "NETBANKING" && (
+                <div className="p-5 rounded-2xl bg-slate-50/80 border border-slate-200/80 space-y-3">
+                  <label className="text-xs font-medium text-slate-700">Select Bank</label>
+                  <select
+                    value={selectedBank}
+                    onChange={(e) => setSelectedBank(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-xs sm:text-sm text-slate-900 font-medium focus:ring-1 focus:ring-[#103D32] outline-none"
+                  >
+                    <option>State Bank of India</option>
+                    <option>HDFC Bank</option>
+                    <option>ICICI Bank</option>
+                    <option>Axis Bank</option>
+                    <option>Kotak Mahindra Bank</option>
+                  </select>
+                </div>
+              )}
+
+              {/* Security Reassurance */}
+              <div className="flex items-center gap-2.5 text-xs text-slate-500">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>
+                  Your transaction is verified instantly. No extra surcharge or booking commission.
+                </span>
+              </div>
+
+              {/* Navigation */}
+              <div className="flex items-center justify-between pt-5 border-t border-slate-100">
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setErrorMessage(null);
+                    setStep(4);
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                  disabled={isSubmitting}
+                  className="gap-2 text-xs sm:text-sm text-slate-600 hover:text-slate-900 cursor-pointer"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>Back to Review</span>
+                </Button>
+                <Button
+                  onClick={handleVerifyAndCompletePayment}
+                  disabled={isSubmitting}
+                  className="gap-2 bg-[#103D32] hover:bg-[#194E41] text-white font-semibold px-8 py-3 rounded-xl shadow-xs cursor-pointer text-sm"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Verifying Payment...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Pay {formatPriceINR(grandTotal)} & Confirm</span>
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ================= RIGHT COLUMN: STICKY ORDER SUMMARY ================= */}
+        <div className="lg:col-span-5 xl:col-span-4">
+          <div className="bg-white rounded-3xl border border-slate-200/80 p-5 sm:p-6 shadow-sm space-y-5 lg:sticky lg:top-24">
+            {/* Package Thumbnail & Title */}
+            <div className="flex items-start gap-3.5 pb-4 border-b border-slate-100">
+              <div className="w-20 h-20 rounded-2xl overflow-hidden relative shrink-0 bg-slate-100 border border-slate-200">
+                <Image
+                  src={packageData.heroImage || "/images/kaaba_sunset_pilgrims.jpg"}
+                  alt={packageData.name}
+                  fill
+                  className="object-cover"
+                />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#C5A264]">
+                    {packageData.category}
+                  </span>
+                  <span className="text-slate-300">•</span>
+                  <span className="text-[10px] text-slate-500 font-medium">
+                    {packageData.durationDays} Days / {packageData.durationNights} Nights
+                  </span>
+                </div>
+                <h3 className="font-display text-base font-bold text-slate-900 leading-snug">
+                  {packageData.name}
+                </h3>
+                <div className="flex items-center gap-1 text-[11px] text-slate-500">
+                  <span className="text-amber-500 font-bold">★ {packageData.rating}</span>
+                  <span>({packageData.reviewCount} verified reviews)</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Hotel Distances Badges */}
+            <div className="space-y-2 text-xs">
+              <div className="flex items-center gap-2 text-slate-700">
+                <Footprints className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span className="truncate">
+                  Makkah: <strong>{packageData.makkahHotel?.distanceText || "50m from Haram"}</strong>
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-slate-700">
+                <Footprints className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span className="truncate">
+                  Madinah: <strong>{packageData.madinahHotel?.distanceText || "100m from Masjid An-Nabawi"}</strong>
+                </span>
+              </div>
+            </div>
+
+            {/* Selected Booking Chips */}
+            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2 text-xs">
+              <div className="flex justify-between items-center text-slate-600">
+                <span>Departure City:</span>
+                <strong className="text-slate-900">{departureCity}</strong>
+              </div>
+              <div className="flex justify-between items-center text-slate-600">
+                <span>Travel Dates:</span>
+                <strong className="text-slate-900">{formattedDepartureDate}</strong>
+              </div>
+              <div className="flex justify-between items-center text-slate-600">
+                <span>Room Type:</span>
+                <strong className="text-slate-900">{roomType.replace("_", " ")}</strong>
+              </div>
+              <div className="flex justify-between items-center text-slate-600">
+                <span>Pilgrims:</span>
+                <strong className="text-slate-900">{paxCount} {paxCount > 1 ? "Persons" : "Person"}</strong>
+              </div>
+            </div>
+
+            {/* Itemized Price Calculation */}
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between text-slate-600">
+                <span>Package Base ({paxCount} × {formatPriceINR(perPersonPrice)}):</span>
+                <span className="font-semibold text-slate-900">{formatPriceINR(baseTotal)}</span>
+              </div>
+
+              {upgradesTotal > 0 && (
+                <div className="flex justify-between text-slate-600">
+                  <span>Selected Upgrades:</span>
+                  <span className="font-semibold text-slate-900">{formatPriceINR(upgradesTotal)}</span>
+                </div>
+              )}
+
+              <div className="flex justify-between text-slate-600">
+                <span>Flights & Umrah Visa:</span>
+                <span className="text-emerald-700 font-semibold">Included</span>
+              </div>
+
+              <div className="flex justify-between text-slate-600">
+                <span>Taxes & 5% GST:</span>
+                <span className="text-emerald-700 font-semibold">Included</span>
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-baseline justify-between">
+                <div>
+                  <span className="text-xs font-semibold text-slate-500 block">Total Payable</span>
+                  <span className="text-[10px] text-emerald-700 font-medium">All-Inclusive</span>
+                </div>
+                <div className="text-right">
+                  <span className="font-display text-2xl font-bold text-[#103D32]">
+                    {formatPriceINR(grandTotal)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Trust Assurances */}
+            <div className="pt-4 border-t border-slate-100 space-y-2 text-[11px] text-slate-500">
+              <div className="flex items-center gap-2">
+                <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span>100% Price Lock — Zero hidden fees</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span>Official Saudi Ministry Licensed Partner</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span>24/7 Pilgrimage Concierge Support</span>
+              </div>
+            </div>
+
+            {/* Helpline */}
+            <div className="p-3 rounded-xl bg-emerald-50/50 border border-emerald-100 flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2 text-slate-700">
+                <Phone className="w-3.5 h-3.5 text-[#103D32]" />
+                <span className="font-medium">Need Booking Help?</span>
+              </div>
+              <a
+                href="tel:+919820012345"
+                className="font-bold text-[#103D32] hover:underline"
+              >
+                +91 98200 12345
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

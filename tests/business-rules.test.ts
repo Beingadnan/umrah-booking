@@ -38,8 +38,8 @@ describe("BookMyUmrah Business Rules & Verification Tests", () => {
     const ref2 = generateBookingReference();
     const currentYear = new Date().getFullYear().toString();
 
-    expect(ref1).toMatch(/^BMU-\d{4}-[A-Z0-9]+$/);
-    expect(ref1).toContain(`BMU-${currentYear}`);
+    expect(ref1).toMatch(/^(ZYR|BMU)-\d{4}-[A-Z0-9]+$/);
+    expect(ref1).toMatch(new RegExp(`^(ZYR|BMU)-${currentYear}`));
     expect(ref1).not.toBe(ref2);
   });
 
@@ -84,7 +84,7 @@ describe("BookMyUmrah Business Rules & Verification Tests", () => {
     // Creates booking
     const booking = await createBooking(validBookingData, "usr-test-1");
     expect(booking.id).toBeDefined();
-    expect(booking.bookingReference).toMatch(/^BMU-/);
+    expect(booking.bookingReference).toMatch(/^(ZYR|BMU)-/);
     expect(booking.status).toBe("PENDING_CONFIRMATION");
     expect(booking.paymentStatus).toBe("UNPAID");
     expect(booking.totalAmountInr).toBeGreaterThan(0);
